@@ -6,7 +6,7 @@
     {
       "page": "tripsHistory",
       "title": "Custom Video Request",
-      "noView": true,
+      "noView": false,
       "mapScript": {
         "url": "https://Austin-GPSFMS.github.io/custom-video-request-addin/trips-history/addin.html"
       }

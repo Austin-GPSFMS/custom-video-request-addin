@@ -1,16 +1,13 @@
 /**
- * Custom Video Request — MyGeotab Map Add-In (Trips History page)
- * ---------------------------------------------------------------------------
+ * Custom Video Request - MyGeotab Map Add-In (Trips History page)
+ *
  * Adds a "Request custom video recording" launcher to the Trips History side
- * panel. Clicking opens a modal (styled like MyGeotab's native dialog) to pick
- * a camera, an event start time, and a duration, then queues the clip.
+ * panel. Clicking opens a modal to pick a camera, an event start time, and a
+ * duration, then queues the clip.
  *
- * Selecting/hovering a camera-equipped vehicle on the map pre-selects its
- * camera in the dropdown.
- *
- * Runs in the my.geotab.com document context (map add-ins share the `geotab`
+ * Runs in the my.geotab.com document context (map add-ins share the geotab
  * global), so it calls Camera-Services (media-services.geotab.com) directly
- * with the four X-MyGeotab-* headers from the live session — no proxy.
+ * with the four X-MyGeotab-* headers from the live session - no proxy.
  *
  *   List cameras:  GET  /DeviceMappings
  *   Request clip:  POST /Media
@@ -25,9 +22,9 @@ geotab.addin.request = function (elt, service) {
 
   var api = service.api;
   var session = null;
-  var cameras = [];            // [{ vehicle, partnerId, partnerDeviceId, goSerial }]
-  var serialByDeviceId = {};   // MyGeotab Device.id -> serialNumber
-  var cameraIdxByGoSerial = {};// goSerial -> index in cameras[]
+  var cameras = [];
+  var serialByDeviceId = {};
+  var cameraIdxByGoSerial = {};
   var loaded = false;
 
   function $(id) { return document.getElementById(id); }
@@ -42,15 +39,27 @@ geotab.addin.request = function (elt, service) {
 
   // ---------- Session + Camera-Services ----------
 
+  // getSession is a callback in older MyGeotab and a Promise in newer builds.
   function loadSession() {
     return new Promise(function (resolve, reject) {
+      function accept(result) {
+        var cred = (result && result.credentials) ? result.credentials : result;
+        if (!cred || !cred.sessionId) {
+          reject(new Error('No MyGeotab session available.'));
+          return;
+        }
+        if (result && result.path && !cred.path) { cred.path = result.path; }
+        if (!session) {
+          session = cred;
+          resolve(cred);
+        }
+      }
       try {
-        api.getSession(function (s) {
-          if (!s) { reject(new Error('No MyGeotab session available.')); return; }
-          session = s;
-          resolve(s);
-        });
-      } catch (e) { reject(e); }
+        var ret = api.getSession(function (s) { accept(s); });
+        if (ret && typeof ret.then === 'function') { ret.then(accept, reject); }
+      } catch (e) {
+        reject(e);
+      }
     });
   }
 
@@ -75,14 +84,14 @@ geotab.addin.request = function (elt, service) {
       });
     }
     return go().then(function (r) {
-      if (r.status === 401) { return loadSession().then(go); } // session aged out
+      if (r.status === 401) { return loadSession().then(go); }
       return r;
     }).then(function (r) {
       return r.text().then(function (txt) {
         var data = txt ? JSON.parse(txt) : null;
         if (!r.ok) {
           var msg = (data && (data.message || data.error)) || ('media-services ' + r.status);
-          if (r.status === 403) msg += ' (user lacks a camera role, e.g. ViewRecordedVideo).';
+          if (r.status === 403) { msg += ' (user lacks a camera role, e.g. ViewRecordedVideo).'; }
           throw new Error(msg);
         }
         return data;
@@ -92,15 +101,18 @@ geotab.addin.request = function (elt, service) {
 
   // ---------- Data ----------
 
-  function loadCameras() {
-    var mappingsP = mediaFetch('GET', '/DeviceMappings');
-    var devicesP = new Promise(function (resolve) {
-      api.call('Get', { typeName: 'Device', resultsLimit: 5000 },
-        function (devs) { resolve(devs || []); },
-        function () { resolve([]); });
+  function getDevices() {
+    return new Promise(function (resolve) {
+      api.call('Get', { typeName: 'Device', resultsLimit: 5000 }, function (devs) {
+        resolve(devs || []);
+      }, function () {
+        resolve([]);
+      });
     });
+  }
 
-    return Promise.all([mappingsP, devicesP]).then(function (res) {
+  function loadCameras() {
+    return Promise.all([mediaFetch('GET', '/DeviceMappings'), getDevices()]).then(function (res) {
       var mappings = res[0] || [];
       var devices = res[1] || [];
       var nameBySerial = {};
@@ -112,17 +124,22 @@ geotab.addin.request = function (elt, service) {
         }
       });
 
-      cameras = (mappings || []).map(function (m) {
+      cameras = mappings.map(function (m) {
         var goSerial = m.associatedDeviceSerialNumber || m.goDeviceSerialNumber || '';
-        var camId    = m.partnerDeviceId || m.cameraImei || m.recorderId || '';
-        var partner  = String(m.partnerId || m.partner || '').toLowerCase();
-        var vehicle  = nameBySerial[goSerial] || goSerial || '(unpaired)';
+        var camId = m.partnerDeviceId || m.cameraImei || m.recorderId || '';
+        var partner = String(m.partnerId || m.partner || '').toLowerCase();
+        var vehicle = nameBySerial[goSerial] || goSerial || '(unpaired)';
         return { vehicle: vehicle, partnerId: partner, partnerDeviceId: camId, goSerial: goSerial };
-      }).filter(function (c) { return c.partnerDeviceId; })
-        .sort(function (a, b) { return a.vehicle.localeCompare(b.vehicle); });
+      }).filter(function (c) {
+        return c.partnerDeviceId;
+      }).sort(function (a, b) {
+        return a.vehicle.localeCompare(b.vehicle);
+      });
 
       cameraIdxByGoSerial = {};
-      cameras.forEach(function (c, i) { if (c.goSerial) cameraIdxByGoSerial[c.goSerial] = i; });
+      cameras.forEach(function (c, i) {
+        if (c.goSerial) { cameraIdxByGoSerial[c.goSerial] = i; }
+      });
 
       return cameras;
     });
@@ -136,19 +153,21 @@ geotab.addin.request = function (elt, service) {
       return;
     }
     var ph = document.createElement('option');
-    ph.value = ''; ph.disabled = true; ph.selected = true; ph.textContent = 'Select a camera…';
+    ph.value = '';
+    ph.disabled = true;
+    ph.selected = true;
+    ph.textContent = 'Select a camera...';
     sel.appendChild(ph);
     cameras.forEach(function (c, i) {
       var o = document.createElement('option');
       o.value = String(i);
-      o.textContent = c.vehicle + '  (' + (c.partnerId || 'camera') + ' · ' + c.partnerDeviceId + ')';
+      o.textContent = c.vehicle + '  (' + (c.partnerId || 'camera') + ' - ' + c.partnerDeviceId + ')';
       sel.appendChild(o);
     });
   }
 
-  // Pre-select the camera for a clicked/hovered MyGeotab device, if it has one.
   function preselectByDeviceId(deviceId) {
-    if (!deviceId || !loaded) return;
+    if (!deviceId || !loaded) { return; }
     var serial = serialByDeviceId[deviceId];
     var idx = serial != null ? cameraIdxByGoSerial[serial] : undefined;
     if (idx == null) {
@@ -157,7 +176,7 @@ geotab.addin.request = function (elt, service) {
       return;
     }
     var sel = $('cvr-camera');
-    if (sel) sel.value = String(idx);
+    if (sel) { sel.value = String(idx); }
     $('cvr-panel-context').textContent = 'Ready: ' + cameras[idx].vehicle;
     $('cvr-open').disabled = false;
   }
@@ -167,25 +186,23 @@ geotab.addin.request = function (elt, service) {
   function buildWindow() {
     var startLocal = $('cvr-start').value;
     var durSec = parseInt($('cvr-duration').value, 10);
-    if (!startLocal) throw new Error('Pick an event start time.');
+    if (!startLocal) { throw new Error('Pick an event start time.'); }
     if (!durSec || durSec > MAX_DURATION_SECONDS) {
-      throw new Error('Duration must be 1–' + MAX_DURATION_SECONDS + ' seconds.');
+      throw new Error('Duration must be 1-' + MAX_DURATION_SECONDS + ' seconds.');
     }
     var startDate = new Date(startLocal);
-    if (isNaN(startDate.getTime())) throw new Error('Invalid start time.');
+    if (isNaN(startDate.getTime())) { throw new Error('Invalid start time.'); }
     var endDate = new Date(startDate.getTime() + durSec * 1000);
-    return {
-      startISO: startDate.toISOString(),
-      endISO: endDate.toISOString(),
-      durSec: durSec
-    };
+    return { startISO: startDate.toISOString(), endISO: endDate.toISOString(), durSec: durSec };
   }
 
   function updateWindowHint() {
     try {
       var w = buildWindow();
-      $('cvr-window-hint').textContent = 'UTC ' + w.startISO + ' → ' + w.endISO;
-    } catch (e) { $('cvr-window-hint').textContent = ''; }
+      $('cvr-window-hint').textContent = 'UTC ' + w.startISO + ' to ' + w.endISO;
+    } catch (e) {
+      $('cvr-window-hint').textContent = '';
+    }
   }
 
   function setDefaultStart() {
@@ -198,13 +215,16 @@ geotab.addin.request = function (elt, service) {
   // ---------- Modal ----------
 
   function openModal() {
-    if (!loaded) return;
+    if (!loaded) { return; }
     setStatus('');
     setDefaultStart();
     updateWindowHint();
     $('cvr-modal').hidden = false;
   }
-  function closeModal() { $('cvr-modal').hidden = true; }
+
+  function closeModal() {
+    $('cvr-modal').hidden = true;
+  }
 
   function submitRequest() {
     var idx = $('cvr-camera').value;
@@ -212,8 +232,12 @@ geotab.addin.request = function (elt, service) {
     var cam = cameras[parseInt(idx, 10)];
 
     var w;
-    try { w = buildWindow(); }
-    catch (e) { setStatus(e.message, 'error'); return; }
+    try {
+      w = buildWindow();
+    } catch (e) {
+      setStatus(e.message, 'error');
+      return;
+    }
 
     var payload = {
       requestStartTime: w.startISO,
@@ -225,12 +249,11 @@ geotab.addin.request = function (elt, service) {
     };
 
     $('cvr-submit').disabled = true;
-    setStatus('Submitting request…', 'busy');
+    setStatus('Submitting request...', 'busy');
 
     mediaFetch('POST', '/Media', payload).then(function (resp) {
       var reqId = (resp && (resp.requestId || resp.id)) || '(queued)';
-      setStatus('Requested for ' + cam.vehicle + '. Tracking ID: ' + reqId +
-        '. Footage appears in the Cameras/Video view once uploaded.', 'ok');
+      setStatus('Requested for ' + cam.vehicle + '. Tracking ID: ' + reqId + '. Footage appears in the Cameras/Video view once uploaded.', 'ok');
     }).catch(function (err) {
       setStatus('Request failed: ' + (err && err.message ? err.message : err), 'error');
     }).then(function () {
@@ -248,40 +271,43 @@ geotab.addin.request = function (elt, service) {
     $('cvr-start').addEventListener('input', updateWindowHint);
     $('cvr-duration').addEventListener('change', updateWindowHint);
     $('cvr-modal').addEventListener('click', function (e) {
-      if (e.target === $('cvr-modal')) closeModal(); // click backdrop to close
+      if (e.target === $('cvr-modal')) { closeModal(); }
     });
   }
 
   function init() {
-    if (loaded) return;
-    setPanelStatus('Loading cameras…');
-    loadSession()
-      .then(loadCameras)
-      .then(function () {
-        populateCameraSelect();
-        loaded = true;
-        setPanelStatus(cameras.length + ' camera(s) available.');
-        $('cvr-open').disabled = cameras.length === 0;
-      })
-      .catch(function (err) {
-        setPanelStatus('Could not load cameras: ' + (err && err.message ? err.message : err));
-      });
+    if (loaded) { return; }
+    setPanelStatus('Loading cameras...');
+    loadSession().then(loadCameras).then(function () {
+      populateCameraSelect();
+      loaded = true;
+      setPanelStatus(cameras.length + ' camera(s) available.');
+      $('cvr-open').disabled = cameras.length === 0;
+    }).catch(function (err) {
+      setPanelStatus('Could not load cameras: ' + (err && err.message ? err.message : err));
+    });
   }
 
-  // Pre-select camera when a vehicle is hovered or clicked on the map.
-  try {
-    service.events.attach('over', function (data) {
-      if (data && data.type === 'device' && data.entity) preselectByDeviceId(data.entity.id);
-    });
-  } catch (e) { /* event not available on this page/version */ }
-  try {
-    service.events.attach('click', function (data) {
-      if (data && data.type === 'device' && data.entity) preselectByDeviceId(data.entity.id);
-    });
-  } catch (e) { /* optional */ }
+  function attachMapEvent(name) {
+    try {
+      service.events.attach(name, function (data) {
+        if (data && data.type === 'device' && data.entity) {
+          preselectByDeviceId(data.entity.id);
+        }
+      });
+    } catch (e) {
+      // event not available on this page/version - safe to ignore
+    }
+  }
 
-  // Load when the Trips History page gains focus.
-  try { service.page.attach('focus', init); } catch (e) { /* optional */ }
+  attachMapEvent('over');
+  attachMapEvent('click');
+
+  try {
+    service.page.attach('focus', init);
+  } catch (e) {
+    // optional
+  }
 
   wireControls();
   init();
