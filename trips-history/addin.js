@@ -9,6 +9,10 @@
  * global), so it calls Camera-Services (media-services.geotab.com) directly
  * with the four X-MyGeotab-* headers from the live session - no proxy.
  *
+ * IMPORTANT: X-MyGeotab-Path must be the database's actual federation server
+ * (e.g. my23.geotab.com), which we read from getSession - NOT the URL host.
+ * Using the URL host (my.geotab.com) yields "Invalid session id".
+ *
  *   List cameras:  GET  /DeviceMappings
  *   Request clip:  POST /Media
  *
@@ -22,6 +26,7 @@ geotab.addin.request = function (elt, service) {
 
   var api = service.api;
   var session = null;
+  var sessionServer = null;
   var cameras = [];
   var serialByDeviceId = {};
   var cameraIdxByGoSerial = {};
@@ -40,23 +45,27 @@ geotab.addin.request = function (elt, service) {
   // ---------- Session + Camera-Services ----------
 
   // getSession is a callback in older MyGeotab and a Promise in newer builds.
+  // The callback's 2nd arg (and the promise's .path) is the real server host.
   function loadSession() {
     return new Promise(function (resolve, reject) {
-      function accept(result) {
-        var cred = (result && result.credentials) ? result.credentials : result;
-        if (!cred || !cred.sessionId) {
+      function accept(cred, server) {
+        var c = (cred && cred.credentials) ? cred.credentials : cred;
+        var srv = server || (cred && cred.path) || (cred && cred.server) || null;
+        if (!c || !c.sessionId) {
           reject(new Error('No MyGeotab session available.'));
           return;
         }
-        if (result && result.path && !cred.path) { cred.path = result.path; }
-        if (!session) {
-          session = cred;
-          resolve(cred);
-        }
+        session = c;
+        if (srv) { sessionServer = srv; }
+        resolve(c);
       }
       try {
-        var ret = api.getSession(function (s) { accept(s); });
-        if (ret && typeof ret.then === 'function') { ret.then(accept, reject); }
+        var ret = api.getSession(function (cred, server) { accept(cred, server); });
+        if (ret && typeof ret.then === 'function') {
+          ret.then(function (result) {
+            accept(result, result && (result.path || result.server));
+          }, reject);
+        }
       } catch (e) {
         reject(e);
       }
@@ -64,7 +73,7 @@ geotab.addin.request = function (elt, service) {
   }
 
   function cameraHeaders() {
-    var path = (window.location && window.location.host) || (session && session.path) || '';
+    var path = sessionServer || (window.location && window.location.host) || '';
     path = String(path).replace(/^https?:\/\//, '').replace(/\/$/, '');
     return {
       'X-MyGeotab-Database': session.database,
