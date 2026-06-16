@@ -50,7 +50,8 @@ geotab.addin.request = function (elt, service) {
     return new Promise(function (resolve, reject) {
       function accept(cred, server) {
         var c = (cred && cred.credentials) ? cred.credentials : cred;
-        var srv = server || (cred && cred.path) || (cred && cred.server) || null;
+        var srv = server || (cred && cred.path) || (cred && cred.server) || (api && api.server) || null;
+        try { console.log('CVR-DIAG getSession ->', JSON.stringify({ credKeys: c ? Object.keys(c) : null, cbServer: server || null, credPath: (cred && cred.path) || null, credServer: (cred && cred.server) || null, apiServer: (api && api.server) || null, locHost: window.location.host })); } catch (e) {}
         if (!c || !c.sessionId) {
           reject(new Error('No MyGeotab session available.'));
           return;
@@ -293,7 +294,7 @@ geotab.addin.request = function (elt, service) {
       setPanelStatus(cameras.length + ' camera(s) available.');
       $('cvr-open').disabled = cameras.length === 0;
     }).catch(function (err) {
-      setPanelStatus('Could not load cameras: ' + (err && err.message ? err.message : err));
+      setPanelStatus('Could not load cameras: ' + (err && err.message ? err.message : err) + '  [path=' + (sessionServer || (window.location && window.location.host)) + ']');
     });
   }
 
