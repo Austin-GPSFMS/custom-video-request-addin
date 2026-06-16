@@ -1,0 +1,71 @@
+<head>
+  <link rel="stylesheet" type="text/css" href="styles.css" />
+</head>
+<div id="customVideoRequest" class="hidden">
+  <div class="cvr-card">
+    <header class="cvr-header">
+      <span class="cvr-header-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="11" x2="12" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7.5" r="1.2" fill="currentColor"/></svg>
+      </span>
+      <h2 class="cvr-title">Request custom video recording</h2>
+    </header>
+
+    <div class="cvr-warning" role="note">
+      <strong>Warning: Data Usage.</strong> Pulling footage uses the camera's cellular data and may
+      incur cost. Keep durations short and request only the window you need.
+    </div>
+
+    <p class="cvr-intro">Set the recording window for the event you want to view.</p>
+
+    <form id="cvr-form" class="cvr-form" autocomplete="off">
+      <div class="cvr-field">
+        <label for="cvr-camera">Camera / vehicle</label>
+        <select id="cvr-camera" required>
+          <option value="" disabled selected>Loading cameras…</option>
+        </select>
+        <span class="cvr-hint" id="cvr-camera-hint"></span>
+      </div>
+
+      <div class="cvr-field">
+        <label for="cvr-start">Event start time</label>
+        <input type="datetime-local" id="cvr-start" step="1" required />
+        <span class="cvr-hint">Local time. Converted to UTC when the request is sent.</span>
+      </div>
+
+      <div class="cvr-field">
+        <label for="cvr-duration">Recording duration</label>
+        <select id="cvr-duration" required>
+          <option value="10">10 seconds</option>
+          <option value="15">15 seconds</option>
+          <option value="20">20 seconds</option>
+          <option value="30" selected>30 seconds</option>
+          <option value="45">45 seconds</option>
+          <option value="60">60 seconds</option>
+          <option value="120">2 minutes</option>
+        </select>
+        <span class="cvr-hint" id="cvr-window-hint"></span>
+      </div>
+
+      <div class="cvr-actions">
+        <button type="button" id="cvr-cancel" class="cvr-btn cvr-btn-secondary">Reset</button>
+        <button type="submit" id="cvr-submit" class="cvr-btn cvr-btn-primary">Request recording</button>
+      </div>
+    </form>
+
+    <div id="cvr-status" class="cvr-status" role="status" aria-live="polite"></div>
+
+    <section class="cvr-recent" id="cvr-recent-section" hidden>
+      <h3 class="cvr-recent-title">Recent requests this session</h3>
+      <table class="cvr-recent-table">
+        <thead><tr><th>Vehicle</th><th>Window (local)</th><th>Status</th></tr></thead>
+        <tbody id="cvr-recent-body"></tbody>
+      </table>
+    </section>
+
+    <footer class="cvr-footer">
+      GPS Fleet Management Solutions &middot; Geotab Authorized Partner &amp; Reseller
+    </footer>
+  </div>
+
+  <script src="customVideoRequest.js"></script>
+</div>

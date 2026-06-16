@@ -1,0 +1,26 @@
+{
+  "name": "Custom Video Request",
+  "supportEmail": "support@gpsfms.com",
+  "version": "1.0.0",
+  "items": [
+    {
+      "url": "customVideoRequest.html",
+      "path": "ActivityLink/",
+      "menuName": {
+        "en": "Custom Video Request"
+      }
+    }
+  ],
+  "isSigned": false,
+  "files": {
+    "customVideoRequest.html": {
+      "path": "/"
+    },
+    "customVideoRequest.js": {
+      "path": "/"
+    },
+    "styles.css": {
+      "path": "/"
+    }
+  }
+}

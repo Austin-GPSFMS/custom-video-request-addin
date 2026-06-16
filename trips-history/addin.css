@@ -1,0 +1,74 @@
+/* Custom Video Request — Trips History map add-in
+   GPSFMS palette: Navy #25477B, Dark #1C2B39, Blue #0084C2, Light Gray #F4F4F4 */
+
+#cvr-panel, .cvr-modal {
+  --navy: #25477B; --dark: #1C2B39; --blue: #0084C2; --gray: #F4F4F4;
+  font-family: 'Roboto', system-ui, sans-serif; color: var(--dark);
+}
+
+/* ---- side panel launcher ---- */
+#cvr-panel { padding: 12px 14px; }
+#cvr-panel-head { font-size: 14px; font-weight: 700; color: var(--navy); margin-bottom: 8px; }
+#cvr-panel-context { font-size: 12.5px; margin-bottom: 10px; }
+#cvr-panel-status { font-size: 12px; margin-top: 8px; }
+.cvr-muted { color: #6b7785; }
+
+/* ---- buttons ---- */
+.cvr-btn {
+  font-family: inherit; font-size: 14px; font-weight: 500;
+  padding: 9px 18px; border-radius: 8px; cursor: pointer;
+  border: 1px solid transparent; transition: background .15s, opacity .15s;
+}
+.cvr-btn:disabled { opacity: .55; cursor: not-allowed; }
+.cvr-btn-secondary { background: #fff; border-color: #c8cfd8; color: var(--dark); }
+.cvr-btn-secondary:hover:not(:disabled) { background: var(--gray); }
+.cvr-btn-primary { background: var(--blue); color: #fff; }
+.cvr-btn-primary:hover:not(:disabled) { background: #006fa3; }
+#cvr-open { width: 100%; }
+
+/* ---- modal ---- */
+.cvr-modal-backdrop {
+  position: fixed; inset: 0; z-index: 100000;
+  background: rgba(28,43,57,.35);
+  display: flex; align-items: center; justify-content: center;
+}
+.cvr-modal-backdrop[hidden] { display: none; }
+.cvr-modal {
+  background: #fff; border-radius: 12px; width: 460px; max-width: calc(100vw - 32px);
+  box-shadow: 0 12px 40px rgba(28,43,57,.28); overflow: hidden;
+}
+.cvr-modal-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 18px 20px 8px;
+}
+.cvr-head-icon { color: var(--blue); display: flex; }
+.cvr-modal-head h2 { font-size: 18px; font-weight: 700; color: var(--navy); margin: 0; flex: 1; }
+.cvr-x { background: none; border: none; font-size: 22px; line-height: 1; color: #8b95a1; cursor: pointer; padding: 0 4px; }
+.cvr-x:hover { color: var(--dark); }
+
+.cvr-modal-body { padding: 4px 20px 8px; }
+.cvr-warning { font-size: 12.5px; color: var(--navy); margin-bottom: 14px; }
+.cvr-warning strong { font-weight: 700; }
+.cvr-intro { font-size: 13.5px; margin: 0 0 16px; }
+
+.cvr-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.cvr-row label { font-size: 13.5px; color: var(--dark); }
+.cvr-row select, .cvr-row input {
+  font-family: inherit; font-size: 13.5px; color: var(--dark);
+  padding: 8px 10px; border: 1px solid #c8cfd8; border-radius: 8px; background: #fff;
+  min-width: 180px; box-sizing: border-box;
+}
+.cvr-row select:focus, .cvr-row input:focus {
+  outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0,132,194,.15);
+}
+#cvr-window-hint { font-size: 11.5px; margin-top: -4px; }
+
+.cvr-status { font-size: 13px; margin-top: 10px; min-height: 18px; }
+.cvr-status.is-error { color: #b3261e; }
+.cvr-status.is-ok    { color: #1b7a3d; }
+.cvr-status.is-busy  { color: var(--blue); }
+
+.cvr-modal-foot {
+  display: flex; justify-content: flex-end; gap: 10px;
+  padding: 12px 20px 18px; border-top: 1px solid #eef1f5; margin-top: 6px;
+}

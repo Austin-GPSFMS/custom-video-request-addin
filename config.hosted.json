@@ -1,0 +1,15 @@
+{
+  "name": "Custom Video Request",
+  "supportEmail": "support@gpsfms.com",
+  "version": "1.0.0",
+  "items": [
+    {
+      "url": "https://Austin-GPSFMS.github.io/custom-video-request-addin/customVideoRequest.html",
+      "path": "ActivityLink/",
+      "menuName": {
+        "en": "Custom Video Request"
+      }
+    }
+  ],
+  "isSigned": false
+}

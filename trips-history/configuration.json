@@ -1,0 +1,17 @@
+{
+  "name": "Custom Video Request",
+  "supportEmail": "support@gpsfms.com",
+  "version": "1.0.0",
+  "items": [
+    {
+      "page": "tripsHistory",
+      "title": "Custom Video Request",
+      "noView": true,
+      "mapScript": {
+        "url": "https://Austin-GPSFMS.github.io/custom-video-request-addin/trips-history/addin.html"
+      }
+    }
+  ],
+  "isSigned": false,
+  "securityIds": []
+}
