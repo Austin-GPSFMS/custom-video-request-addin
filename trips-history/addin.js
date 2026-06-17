@@ -21,12 +21,13 @@
 geotab.addin.request = function (elt, service) {
   'use strict';
 
-  var MEDIA_BASE = 'https://media-services.geotab.com';
+  var MEDIA_BASE = 'https://media-services.geotab.com/api';
   var MAX_DURATION_SECONDS = 120;
 
   var api = service.api;
   var session = null;
   var sessionServer = null;
+  var userId = null;
   var cameras = [];
   var serialByDeviceId = {};
   var cameraIdxByGoSerial = {};
@@ -73,16 +74,27 @@ geotab.addin.request = function (elt, service) {
     });
   }
 
+  function getUserId() {
+    return new Promise(function (resolve) {
+      api.call('Get', { typeName: 'User', search: { name: session.userName } }, function (users) {
+        if (users && users[0]) { userId = users[0].id; }
+        resolve(userId);
+      }, function () { resolve(null); });
+    });
+  }
+
   function cameraHeaders() {
     var path = sessionServer || (window.location && window.location.host) || '';
     path = String(path).replace(/^https?:\/\//, '').replace(/\/$/, '');
-    return {
+    var h = {
       'X-MyGeotab-Database': session.database,
       'X-MyGeotab-Path': path,
       'X-MyGeotab-SessionId': session.sessionId,
       'X-MyGeotab-Username': session.userName,
       'Content-Type': 'application/json'
     };
+    if (userId) { h['X-MyGeotab-Userid'] = userId; }
+    return h;
   }
 
   function mediaFetch(method, path, body) {
@@ -288,7 +300,7 @@ geotab.addin.request = function (elt, service) {
   function init() {
     if (loaded) { return; }
     setPanelStatus('Loading cameras...');
-    loadSession().then(loadCameras).then(function () {
+    loadSession().then(getUserId).then(loadCameras).then(function () {
       populateCameraSelect();
       loaded = true;
       setPanelStatus(cameras.length + ' camera(s) available.');
