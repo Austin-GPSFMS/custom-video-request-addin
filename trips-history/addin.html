@@ -11,6 +11,18 @@
     <div id="cvr-panel-head">
       <span id="cvr-panel-title">Camera Video</span>
     </div>
+
+    <div id="cvr-search">
+      <label for="cvr-address">Find address</label>
+      <div class="cvr-search-row">
+        <input type="text" id="cvr-address" placeholder="123 Main St, City, ST" autocomplete="off" />
+        <button id="cvr-find" class="cvr-btn cvr-btn-primary" type="button">Go</button>
+      </div>
+      <div id="cvr-find-status" class="cvr-muted"></div>
+    </div>
+
+    <hr class="cvr-divider" />
+
     <div id="cvr-panel-context" class="cvr-muted">Select a camera-equipped vehicle on the map.</div>
     <button id="cvr-open" class="cvr-btn cvr-btn-primary" type="button" disabled>Request custom video recording</button>
     <div id="cvr-panel-status" class="cvr-muted"></div>

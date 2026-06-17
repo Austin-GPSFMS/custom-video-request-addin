@@ -72,3 +72,17 @@
   display: flex; justify-content: flex-end; gap: 10px;
   padding: 12px 20px 18px; border-top: 1px solid #eef1f5; margin-top: 6px;
 }
+
+
+/* ---- address search ---- */
+#cvr-search { margin-bottom: 12px; }
+#cvr-search label { display:block; font-size:13px; font-weight:700; color:var(--navy); margin-bottom:6px; }
+.cvr-search-row { display:flex; gap:8px; }
+#cvr-address {
+  flex:1; min-width:0; font-family:inherit; font-size:13.5px; color:var(--dark);
+  padding:8px 10px; border:1px solid #c8cfd8; border-radius:8px; box-sizing:border-box;
+}
+#cvr-address:focus { outline:none; border-color:var(--blue); box-shadow:0 0 0 3px rgba(0,132,194,.15); }
+#cvr-find { flex:0 0 auto; padding:8px 16px; }
+#cvr-find-status { font-size:12px; margin-top:6px; }
+.cvr-divider { border:none; border-top:1px solid #e3e7ed; margin:12px 0; }

@@ -26,6 +26,12 @@ geotab.addin.request = function (elt, service) {
   var MAX_DURATION_SECONDS = 120;
 
   var api = service.api;
+  var mapSvc = service.map;       // setBounds / setZoom
+  var canvasSvc = service.canvas; // marker / circle / clear
+  var PIN_SRC = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="38" viewBox="0 0 30 38">' +
+    '<path d="M15 0C7 0 1 6 1 14c0 9.5 14 24 14 24s14-14.5 14-24C29 6 23 0 15 0z" fill="#25477B"/>' +
+    '<circle cx="15" cy="14" r="5.5" fill="#fff"/></svg>');
   var session = null;
   var sessionServer = null;
   var userId = null;
@@ -294,6 +300,43 @@ geotab.addin.request = function (elt, service) {
     $('cvr-open').disabled = false;
   }
 
+  // ---------- Address search (jump map + drop pin) ----------
+
+  function setFindStatus(msg) { var n = $('cvr-find-status'); if (n) { n.textContent = msg || ''; } }
+
+  function goToLocation(lat, lng) {
+    try {
+      if (canvasSvc && canvasSvc.clear) { canvasSvc.clear(); }
+      if (canvasSvc && canvasSvc.marker) { canvasSvc.marker({ lat: lat, lng: lng }, 30, 38, PIN_SRC, 1000); }
+    } catch (e) {}
+    try {
+      if (mapSvc && mapSvc.setBounds) {
+        var d = 0.0025; // ~250m box -> street-level zoom
+        mapSvc.setBounds({ sw: { lat: lat - d, lng: lng - d }, ne: { lat: lat + d, lng: lng + d } });
+      }
+    } catch (e) {}
+  }
+
+  function findAddress() {
+    var addr = ($('cvr-address').value || '').trim();
+    if (!addr) { setFindStatus('Type an address.'); return; }
+    setFindStatus('Searching...');
+    // Geotab server-side geocoder: returns coordinates (x = lng, y = lat).
+    apiCall('GetCoordinates', { addresses: [addr] }).then(function (res) {
+      var c = res && res[0];
+      var lat = c && (c.y != null ? c.y : c.lat);
+      var lng = c && (c.x != null ? c.x : c.lng);
+      if (lat == null || lng == null || (lat === 0 && lng === 0)) {
+        setFindStatus('Address not found. Try adding city/state.');
+        return;
+      }
+      goToLocation(lat, lng);
+      setFindStatus('Showing: ' + addr + '  (pick the truck on the map, then request video)');
+    }).catch(function (err) {
+      setFindStatus('Search failed: ' + (err && err.message ? err.message : err));
+    });
+  }
+
   // ---------- Request window ----------
 
   function buildWindow() {
@@ -386,6 +429,14 @@ geotab.addin.request = function (elt, service) {
     $('cvr-modal').addEventListener('click', function (e) {
       if (e.target === $('cvr-modal')) { closeModal(); }
     });
+    var findBtn = $('cvr-find');
+    if (findBtn) { findBtn.addEventListener('click', findAddress); }
+    var addrInput = $('cvr-address');
+    if (addrInput) {
+      addrInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); findAddress(); }
+      });
+    }
   }
 
   function init() {
