@@ -137,13 +137,22 @@ geotab.addin.request = function (elt, service) {
     });
   }
 
-  function getUserId() {
-    return new Promise(function (resolve) {
-      api.call('Get', { typeName: 'User', search: { name: session.userName } }, function (users) {
-        if (users && users[0]) { userId = users[0].id; }
-        resolve(userId);
-      }, function () { resolve(null); });
+  // service.api.call returns a Promise in map add-ins (older builds used
+  // callbacks) - support both so we never hang.
+  function apiCall(method, params) {
+    return new Promise(function (resolve, reject) {
+      try {
+        var ret = api.call(method, params, function (r) { resolve(r); }, function (e) { reject(e); });
+        if (ret && typeof ret.then === 'function') { ret.then(resolve, reject); }
+      } catch (e) { reject(e); }
     });
+  }
+
+  function getUserId() {
+    return apiCall('Get', { typeName: 'User', search: { name: session.userName } }).then(
+      function (users) { if (users && users[0]) { userId = users[0].id; } return userId; },
+      function () { return null; }
+    );
   }
 
   // The camera UI's Bearer (OIDC) token is kept by MyGeotab in localStorage
@@ -209,13 +218,10 @@ geotab.addin.request = function (elt, service) {
   // ---------- Data ----------
 
   function getDevices() {
-    return new Promise(function (resolve) {
-      api.call('Get', { typeName: 'Device', resultsLimit: 5000 }, function (devs) {
-        resolve(devs || []);
-      }, function () {
-        resolve([]);
-      });
-    });
+    return apiCall('Get', { typeName: 'Device', resultsLimit: 5000 }).then(
+      function (devs) { return devs || []; },
+      function () { return []; }
+    );
   }
 
   function loadCameras() {
