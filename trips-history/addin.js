@@ -6,15 +6,16 @@
  * duration, then queues the clip.
  *
  * Runs in the my.geotab.com document context (map add-ins share the geotab
- * global), so it calls Camera-Services (media-services.geotab.com) directly
- * with the four X-MyGeotab-* headers from the live session - no proxy.
+ * global), so it calls Camera-Services directly - no proxy, no credentials.
  *
- * IMPORTANT: X-MyGeotab-Path must be the database's actual federation server
- * (e.g. my23.geotab.com), which we read from getSession - NOT the URL host.
- * Using the URL host (my.geotab.com) yields "Invalid session id".
+ * AUTH (matches what the native camera UI sends in this tenant):
+ *   - Base: https://media-services.geotab.com/api
+ *   - Authorization: Bearer <token>  (read from localStorage 'authToken',
+ *     the OIDC token MyGeotab already minted - we reuse it, same origin)
+ *   - X-MyGeotab-Database / -Path / -SessionId / -Userid / -Username
  *
- *   List cameras:  GET  /DeviceMappings
- *   Request clip:  POST /Media
+ *   List cameras:  GET  /api/DeviceMappings
+ *   Request clip:  POST /api/Media
  *
  * partnerId branches automatically: smarterai (GoFocus) | surfsight | sensata.
  */
@@ -52,7 +53,7 @@ geotab.addin.request = function (elt, service) {
       function accept(cred, server) {
         var c = (cred && cred.credentials) ? cred.credentials : cred;
         var srv = server || (cred && cred.path) || (cred && cred.server) || (c && c.domain) || (api && api.server) || null;
-        try { console.log('CVR-DIAG ->', JSON.stringify({ credDomain: (c && c.domain) || null, chosenSrv: srv || null, locHost: window.location.host })); } catch (e) {}
+        try { console.log('CVR-DIAG ->', JSON.stringify({ server: srv || window.location.host, hasAuthToken: !!(window.localStorage && localStorage.getItem('authToken')) })); } catch (e) {}
         if (!c || !c.sessionId) {
           reject(new Error('No MyGeotab session available.'));
           return;
@@ -83,6 +84,14 @@ geotab.addin.request = function (elt, service) {
     });
   }
 
+  // The camera UI's Bearer (OIDC) token is kept by MyGeotab in localStorage
+  // under 'authToken'. We run in the same origin, so we can read + reuse it.
+  // Read fresh each call so we pick up MyGeotab's token refreshes.
+  function getAuthToken() {
+    try { return (window.localStorage && localStorage.getItem('authToken')) || null; }
+    catch (e) { return null; }
+  }
+
   function cameraHeaders() {
     var path = sessionServer || (window.location && window.location.host) || '';
     path = String(path).replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -94,6 +103,8 @@ geotab.addin.request = function (elt, service) {
       'Content-Type': 'application/json'
     };
     if (userId) { h['X-MyGeotab-Userid'] = userId; }
+    var token = getAuthToken();
+    if (token) { h['Authorization'] = 'Bearer ' + token; }
     return h;
   }
 
