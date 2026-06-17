@@ -35,53 +35,66 @@ geotab.addin.request = function (elt, service) {
   var loaded = false;
   var capturedBearer = null;
 
-  // Reuse the exact OIDC Bearer MyGeotab sends to media-services. The camera
-  // token is a short-lived Keycloak token held in memory (not localStorage),
-  // so we intercept MyGeotab's own media-services requests (fetch + XHR),
-  // capture their Authorization header, and reuse it. Pure browser, no proxy.
-  (function installTokenCapture() {
-    function remember(auth) {
-      if (auth && /^Bearer\s+eyJ/i.test(auth)) {
-        capturedBearer = auth.replace(/^Bearer\s+/i, '');
-        // If we captured the token after our first (failed) load, retry once.
-        if (!loaded && !window.__cvrRetried) {
-          window.__cvrRetried = true;
-          setTimeout(function () { try { init(); } catch (e) {} }, 0);
-        }
+  // Reuse the exact OIDC Bearer MyGeotab sends to media-services. The token
+  // is a short-lived Keycloak token held in memory (not localStorage). This
+  // add-in runs in a sandboxed-but-same-origin iframe, so we patch fetch/XHR
+  // on the top window AND every same-origin frame to capture the Authorization
+  // header MyGeotab uses for media-services, then reuse it. Pure browser.
+  function cvrRemember(auth) {
+    if (auth && /^Bearer\s+eyJ/i.test(auth)) {
+      capturedBearer = auth.replace(/^Bearer\s+/i, '');
+      if (!loaded && !window.__cvrRetried) {
+        window.__cvrRetried = true;
+        setTimeout(function () { try { init(); } catch (e) {} }, 0);
       }
     }
-    var isMedia = function (u) { return u && String(u).indexOf('media-services.geotab.com') !== -1; };
+  }
+  function cvrIsMedia(u) { return u && String(u).indexOf('media-services.geotab.com') !== -1; }
+  function cvrPatch(win) {
     try {
-      var of = window.fetch;
+      var of = win.fetch;
       if (of && !of.__cvrWrapped) {
-        window.fetch = function (input, init) {
+        win.fetch = function (input, init) {
           try {
             var url = (typeof input === 'string') ? input : (input && input.url) || '';
-            if (isMedia(url)) {
+            if (cvrIsMedia(url)) {
               var a = null;
-              if (init && init.headers) { try { a = new Headers(init.headers).get('authorization'); } catch (e) {} }
+              if (init && init.headers) {
+                try { a = new (win.Headers || Headers)(init.headers).get('authorization'); } catch (e) {}
+              }
               if (!a && input && input.headers && input.headers.get) { a = input.headers.get('authorization'); }
-              remember(a);
+              cvrRemember(a);
             }
           } catch (e) {}
           return of.apply(this, arguments);
         };
-        window.fetch.__cvrWrapped = true;
+        win.fetch.__cvrWrapped = true;
       }
     } catch (e) {}
     try {
-      var oOpen = XMLHttpRequest.prototype.open;
-      var oSet = XMLHttpRequest.prototype.setRequestHeader;
-      if (oSet && !oSet.__cvrWrapped) {
-        XMLHttpRequest.prototype.open = function (m, url) { this.__cvrUrl = url || ''; return oOpen.apply(this, arguments); };
-        XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
-          try { if (String(name).toLowerCase() === 'authorization' && isMedia(this.__cvrUrl)) { remember(value); } } catch (e) {}
+      var XHR = win.XMLHttpRequest && win.XMLHttpRequest.prototype;
+      if (XHR && XHR.setRequestHeader && !XHR.setRequestHeader.__cvrWrapped) {
+        var oOpen = XHR.open, oSet = XHR.setRequestHeader;
+        XHR.open = function (m, url) { this.__cvrUrl = url || ''; return oOpen.apply(this, arguments); };
+        XHR.setRequestHeader = function (name, value) {
+          try { if (String(name).toLowerCase() === 'authorization' && cvrIsMedia(this.__cvrUrl)) { cvrRemember(value); } } catch (e) {}
           return oSet.apply(this, arguments);
         };
-        XMLHttpRequest.prototype.setRequestHeader.__cvrWrapped = true;
+        XHR.setRequestHeader.__cvrWrapped = true;
       }
     } catch (e) {}
-  })();
+  }
+  function cvrPatchAll() {
+    cvrPatch(window);
+    try { if (window.top) cvrPatch(window.top); } catch (e) {}
+    try {
+      var f = window.top ? window.top.frames : null;
+      if (f) { for (var i = 0; i < f.length; i++) { try { cvrPatch(f[i]); } catch (e) {} } }
+    } catch (e) {}
+  }
+  cvrPatchAll();
+  // Re-scan: frames (incl. the native camera add-in) may load after us.
+  setInterval(cvrPatchAll, 2000);
 
   function $(id) { return document.getElementById(id); }
 
