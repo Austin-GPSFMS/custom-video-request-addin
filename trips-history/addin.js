@@ -33,6 +33,55 @@ geotab.addin.request = function (elt, service) {
   var serialByDeviceId = {};
   var cameraIdxByGoSerial = {};
   var loaded = false;
+  var capturedBearer = null;
+
+  // Reuse the exact OIDC Bearer MyGeotab sends to media-services. The camera
+  // token is a short-lived Keycloak token held in memory (not localStorage),
+  // so we intercept MyGeotab's own media-services requests (fetch + XHR),
+  // capture their Authorization header, and reuse it. Pure browser, no proxy.
+  (function installTokenCapture() {
+    function remember(auth) {
+      if (auth && /^Bearer\s+eyJ/i.test(auth)) {
+        capturedBearer = auth.replace(/^Bearer\s+/i, '');
+        // If we captured the token after our first (failed) load, retry once.
+        if (!loaded && !window.__cvrRetried) {
+          window.__cvrRetried = true;
+          setTimeout(function () { try { init(); } catch (e) {} }, 0);
+        }
+      }
+    }
+    var isMedia = function (u) { return u && String(u).indexOf('media-services.geotab.com') !== -1; };
+    try {
+      var of = window.fetch;
+      if (of && !of.__cvrWrapped) {
+        window.fetch = function (input, init) {
+          try {
+            var url = (typeof input === 'string') ? input : (input && input.url) || '';
+            if (isMedia(url)) {
+              var a = null;
+              if (init && init.headers) { try { a = new Headers(init.headers).get('authorization'); } catch (e) {} }
+              if (!a && input && input.headers && input.headers.get) { a = input.headers.get('authorization'); }
+              remember(a);
+            }
+          } catch (e) {}
+          return of.apply(this, arguments);
+        };
+        window.fetch.__cvrWrapped = true;
+      }
+    } catch (e) {}
+    try {
+      var oOpen = XMLHttpRequest.prototype.open;
+      var oSet = XMLHttpRequest.prototype.setRequestHeader;
+      if (oSet && !oSet.__cvrWrapped) {
+        XMLHttpRequest.prototype.open = function (m, url) { this.__cvrUrl = url || ''; return oOpen.apply(this, arguments); };
+        XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
+          try { if (String(name).toLowerCase() === 'authorization' && isMedia(this.__cvrUrl)) { remember(value); } } catch (e) {}
+          return oSet.apply(this, arguments);
+        };
+        XMLHttpRequest.prototype.setRequestHeader.__cvrWrapped = true;
+      }
+    } catch (e) {}
+  })();
 
   function $(id) { return document.getElementById(id); }
 
@@ -53,7 +102,7 @@ geotab.addin.request = function (elt, service) {
       function accept(cred, server) {
         var c = (cred && cred.credentials) ? cred.credentials : cred;
         var srv = server || (cred && cred.path) || (cred && cred.server) || (c && c.domain) || (api && api.server) || null;
-        try { console.log('CVR-DIAG ->', JSON.stringify({ server: srv || window.location.host, hasAuthToken: !!(window.localStorage && localStorage.getItem('authToken')) })); } catch (e) {}
+        try { console.log('CVR-DIAG ->', JSON.stringify({ server: srv || window.location.host, capturedBearer: !!capturedBearer })); } catch (e) {}
         if (!c || !c.sessionId) {
           reject(new Error('No MyGeotab session available.'));
           return;
@@ -88,8 +137,20 @@ geotab.addin.request = function (elt, service) {
   // under 'authToken'. We run in the same origin, so we can read + reuse it.
   // Read fresh each call so we pick up MyGeotab's token refreshes.
   function getAuthToken() {
+    if (capturedBearer) { return capturedBearer; }
     try { return (window.localStorage && localStorage.getItem('authToken')) || null; }
     catch (e) { return null; }
+  }
+
+  // Give MyGeotab a moment to fire a media-services call we can capture.
+  function waitForToken(timeoutMs) {
+    var start = Date.now();
+    return new Promise(function (resolve) {
+      (function poll() {
+        if (capturedBearer || Date.now() - start > timeoutMs) { resolve(capturedBearer); return; }
+        setTimeout(poll, 300);
+      })();
+    });
   }
 
   function cameraHeaders() {
@@ -311,7 +372,7 @@ geotab.addin.request = function (elt, service) {
   function init() {
     if (loaded) { return; }
     setPanelStatus('Loading cameras...');
-    loadSession().then(getUserId).then(loadCameras).then(function () {
+    loadSession().then(getUserId).then(function () { return waitForToken(8000); }).then(loadCameras).then(function () {
       populateCameraSelect();
       loaded = true;
       setPanelStatus(cameras.length + ' camera(s) available.');
