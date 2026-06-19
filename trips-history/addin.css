@@ -98,3 +98,5 @@
 .cvr-inc-table a:hover { text-decoration:underline; }
 #cvr-inc-listwrap { max-height:240px; overflow:auto; margin-top:10px; }
 #cvr-inc-plan { font-size:12px; margin-top:4px; }
+
+#cvr-inc-resume { margin-top:8px; }

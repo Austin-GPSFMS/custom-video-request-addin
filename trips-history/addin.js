@@ -469,6 +469,14 @@ geotab.addin.request = function (elt, service) {
     $('cvr-inc-start-btn').disabled = false;
     incStatus('');
     updateIncPlan();
+    var saved = loadSavedIncident();
+    if (saved) {
+      var pend = saved.clips.filter(function (c) { return c.requestId && !c.url && !/Failed/.test(c.status); }).length;
+      $('cvr-inc-resume').hidden = false;
+      $('cvr-inc-resume').textContent = 'Resume previous pull (' + saved.clips.length + ' clip(s)' + (pend ? ', ' + pend + ' pending' : ', ready') + ')';
+    } else {
+      $('cvr-inc-resume').hidden = true;
+    }
     $('cvr-incident-modal').hidden = false;
   }
 
@@ -522,7 +530,7 @@ geotab.addin.request = function (elt, service) {
       mediaFetch('POST', '/Media', payload).then(function (resp) {
         clip.requestId = (resp && (resp.mediaRequestId || resp.requestId || resp.id)) || null;
         clip.status = clip.requestId ? 'Processing...' : 'Queued';
-        renderIncList();
+        renderIncList(); saveIncident();
         if (clip.requestId) { pollClip(clip, 0); } else { checkAllDone(); }
       }).catch(function (err) {
         clip.status = 'Failed: ' + (err && err.message ? err.message : err);
@@ -532,7 +540,7 @@ geotab.addin.request = function (elt, service) {
   }
 
   function pollClip(clip, attempts) {
-    if (attempts > 75) { clip.status = 'Timed out'; renderIncList(); checkAllDone(); return; } // ~5 min
+    if (attempts > 45) { clip.status = 'Still processing'; renderIncList(); checkAllDone(); return; } // ~6 min auto; Refresh continues
     mediaFetch('GET', '/Media/' + encodeURIComponent(clip.requestId)).then(function (r) {
       var st = r && r.status;
       if (st === 'ResponseReady' || st === 'ResponsePartiallyReady') {
@@ -541,10 +549,10 @@ geotab.addin.request = function (elt, service) {
         clip.status = 'Failed (' + st + ')'; renderIncList(); checkAllDone();
       } else {
         clip.status = 'Processing...'; renderIncList();
-        setTimeout(function () { pollClip(clip, attempts + 1); }, 4000);
+        setTimeout(function () { pollClip(clip, attempts + 1); }, 8000);
       }
     }).catch(function () {
-      setTimeout(function () { pollClip(clip, attempts + 1); }, 4000);
+      setTimeout(function () { pollClip(clip, attempts + 1); }, 8000);
     });
   }
 
@@ -555,23 +563,70 @@ geotab.addin.request = function (elt, service) {
       for (var i = 0; i < resources.length; i++) { if (resources[i] && resources[i].mediaUrl) { res = resources[i]; break; } }
       clip.url = res ? res.mediaUrl : null;
       clip.status = res ? 'Ready' : 'Ready (no file URL)';
-      renderIncList(); checkAllDone();
+      renderIncList(); saveIncident(); checkAllDone();
     }).catch(function () {
       clip.status = 'Ready (link error)'; renderIncList(); checkAllDone();
     });
   }
 
   function checkAllDone() {
-    var pending = incidentClips.some(function (c) { return /Requesting|Processing/.test(c.status); });
+    var pending = incidentClips.some(function (c) { return c.status === 'Requesting...' || c.status === 'Processing...'; });
     if (pending) { return; }
     var ready = incidentClips.filter(function (c) { return c.url; });
+    var processing = incidentClips.filter(function (c) { return c.status === 'Still processing'; });
     $('cvr-inc-start-btn').disabled = false;
-    if (ready.length) {
-      $('cvr-inc-zip').hidden = false;
+    $('cvr-inc-refresh').hidden = processing.length === 0;
+    $('cvr-inc-zip').hidden = ready.length === 0;
+    saveIncident();
+    if (ready.length && processing.length) {
+      incStatus(ready.length + ' ready, ' + processing.length + ' still processing (camera may be asleep). Click Refresh in a few minutes.', 'busy');
+    } else if (ready.length) {
       incStatus(ready.length + ' of ' + incidentClips.length + ' clip(s) ready. Download all, or use the per-clip links.', 'ok');
+    } else if (processing.length) {
+      incStatus('Requested OK, but not ready yet - the camera was likely asleep. They also appear in the Cameras view. Click Refresh in a few minutes.', 'busy');
     } else {
       incStatus('No clips retrieved. Check the camera was online for that window, then retry.', 'error');
     }
+  }
+
+  function refreshIncident() {
+    var toCheck = incidentClips.filter(function (c) { return c.requestId && !c.url && !/Failed/.test(c.status); });
+    if (!toCheck.length) { return; }
+    $('cvr-inc-refresh').hidden = true;
+    incStatus('Checking ' + toCheck.length + ' clip(s)...', 'busy');
+    toCheck.forEach(function (c) { c.status = 'Processing...'; pollClip(c, 0); });
+    renderIncList();
+  }
+
+  function saveIncident() {
+    try {
+      localStorage.setItem('cvrIncidentPull', JSON.stringify({
+        when: Date.now(),
+        camIdx: $('cvr-inc-camera').value,
+        clips: incidentClips.map(function (c) {
+          return { idx: c.idx, label: c.label, startISO: c.startISO, endISO: c.endISO, requestId: c.requestId, status: c.status, url: c.url };
+        })
+      }));
+    } catch (e) {}
+  }
+  function loadSavedIncident() {
+    try {
+      var d = JSON.parse(localStorage.getItem('cvrIncidentPull') || 'null');
+      if (!d || !d.clips || !d.clips.length) { return null; }
+      if (Date.now() - (d.when || 0) > 24 * 3600 * 1000) { return null; }
+      return d;
+    } catch (e) { return null; }
+  }
+  function resumeIncident() {
+    var d = loadSavedIncident();
+    if (!d) { return; }
+    incidentClips = d.clips.slice();
+    if (d.camIdx != null) { $('cvr-inc-camera').value = d.camIdx; }
+    renderIncList();
+    $('cvr-inc-listwrap').hidden = false;
+    $('cvr-inc-resume').hidden = true;
+    var pend = incidentClips.some(function (c) { return c.requestId && !c.url && !/Failed/.test(c.status); });
+    if (pend) { refreshIncident(); } else { checkAllDone(); }
   }
 
   // ---- dependency-free ZIP (store / no compression - clips are already compressed) ----
@@ -676,6 +731,8 @@ geotab.addin.request = function (elt, service) {
     $('cvr-inc-cancel').addEventListener('click', closeIncident);
     $('cvr-inc-start-btn').addEventListener('click', startIncidentPull);
     $('cvr-inc-zip').addEventListener('click', downloadIncidentZip);
+    $('cvr-inc-refresh').addEventListener('click', refreshIncident);
+    $('cvr-inc-resume').addEventListener('click', resumeIncident);
     $('cvr-inc-total').addEventListener('input', updateIncPlan);
     $('cvr-inc-chunk').addEventListener('change', updateIncPlan);
     $('cvr-incident-modal').addEventListener('click', function (e) {
