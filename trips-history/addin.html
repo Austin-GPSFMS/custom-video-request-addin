@@ -25,6 +25,7 @@
 
     <div id="cvr-panel-context" class="cvr-muted">Select a camera-equipped vehicle on the map.</div>
     <button id="cvr-open" class="cvr-btn cvr-btn-primary" type="button" disabled>Request custom video recording</button>
+    <button id="cvr-incident-open" class="cvr-btn cvr-btn-secondary" type="button" disabled>Pull incident clips (long window)</button>
     <div id="cvr-panel-status" class="cvr-muted"></div>
   </div>
 
@@ -73,6 +74,57 @@
       <footer class="cvr-modal-foot">
         <button id="cvr-cancel" class="cvr-btn cvr-btn-secondary" type="button">Cancel</button>
         <button id="cvr-submit" class="cvr-btn cvr-btn-primary" type="button">Request recording</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Incident pull modal -->
+  <div id="cvr-incident-modal" class="cvr-modal-backdrop" hidden>
+    <div class="cvr-modal">
+      <header class="cvr-modal-head">
+        <span class="cvr-head-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="11" x2="12" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7.5" r="1.2" fill="currentColor"/></svg>
+        </span>
+        <h2>Pull incident clips</h2>
+        <button id="cvr-inc-x" class="cvr-x" type="button" aria-label="Close">&times;</button>
+      </header>
+      <div class="cvr-modal-body">
+        <div class="cvr-warning"><strong>Heads up:</strong> this pulls the full window off the camera over cellular. Request only what the incident needs.</div>
+        <form id="cvr-inc-form" autocomplete="off">
+          <div class="cvr-row">
+            <label for="cvr-inc-camera">Camera / vehicle</label>
+            <select id="cvr-inc-camera"></select>
+          </div>
+          <div class="cvr-row">
+            <label for="cvr-inc-start">Incident start</label>
+            <input type="datetime-local" id="cvr-inc-start" step="1" />
+          </div>
+          <div class="cvr-row">
+            <label for="cvr-inc-total">Total minutes</label>
+            <input type="number" id="cvr-inc-total" min="1" max="120" value="20" />
+          </div>
+          <div class="cvr-row">
+            <label for="cvr-inc-chunk">Clip length</label>
+            <select id="cvr-inc-chunk">
+              <option value="60">1 min</option>
+              <option value="120" selected>2 min</option>
+              <option value="180">3 min</option>
+            </select>
+          </div>
+          <div id="cvr-inc-plan" class="cvr-muted"></div>
+        </form>
+        <div id="cvr-inc-listwrap" hidden>
+          <table class="cvr-inc-table">
+            <thead><tr><th>#</th><th>Window</th><th>Status</th><th>Clip</th></tr></thead>
+            <tbody id="cvr-inc-list"></tbody>
+          </table>
+        </div>
+        <div id="cvr-inc-status" class="cvr-status" role="status" aria-live="polite"></div>
+      </div>
+      <footer class="cvr-modal-foot">
+        <button id="cvr-inc-cancel" class="cvr-btn cvr-btn-secondary" type="button">Close</button>
+        <button id="cvr-inc-start-btn" class="cvr-btn cvr-btn-primary" type="button">Start pull</button>
+        <button id="cvr-inc-zip" class="cvr-btn cvr-btn-primary" type="button" hidden>Download all (ZIP)</button>
       </footer>
     </div>
   </div>

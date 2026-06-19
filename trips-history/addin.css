@@ -86,3 +86,15 @@
 #cvr-find { flex:0 0 auto; padding:8px 16px; }
 #cvr-find-status { font-size:12px; margin-top:6px; }
 .cvr-divider { border:none; border-top:1px solid #e3e7ed; margin:12px 0; }
+
+
+/* ---- incident pull ---- */
+#cvr-incident-open { width:100%; margin-top:8px; }
+.cvr-inc-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:6px; }
+.cvr-inc-table th { text-align:left; background:var(--navy); color:#fff; font-weight:500; padding:5px 8px; }
+.cvr-inc-table td { padding:5px 8px; border-bottom:1px solid #eef1f5; vertical-align:top; }
+.cvr-inc-table tr:nth-child(even) td { background:var(--gray); }
+.cvr-inc-table a { color:var(--blue); text-decoration:none; font-weight:500; }
+.cvr-inc-table a:hover { text-decoration:underline; }
+#cvr-inc-listwrap { max-height:240px; overflow:auto; margin-top:10px; }
+#cvr-inc-plan { font-size:12px; margin-top:4px; }

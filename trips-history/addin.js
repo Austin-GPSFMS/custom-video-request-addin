@@ -417,6 +417,248 @@ geotab.addin.request = function (elt, service) {
     });
   }
 
+  // ---------- Incident pull (chunked clips + ZIP download) ----------
+
+  var incidentClips = [];
+
+  function escHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function fillIncidentCameras() {
+    var sel = $('cvr-inc-camera');
+    sel.innerHTML = '';
+    var ph = document.createElement('option');
+    ph.value = ''; ph.disabled = true; ph.selected = true; ph.textContent = 'Select a camera...';
+    sel.appendChild(ph);
+    cameras.forEach(function (c, i) {
+      var o = document.createElement('option');
+      o.value = String(i);
+      o.textContent = c.vehicle + '  (' + (c.partnerId || 'camera') + ')';
+      sel.appendChild(o);
+    });
+  }
+
+  function incStatus(msg, kind) {
+    var n = $('cvr-inc-status');
+    n.textContent = msg || '';
+    n.className = 'cvr-status' + (kind ? ' is-' + kind : '');
+  }
+
+  function updateIncPlan() {
+    var total = parseInt($('cvr-inc-total').value, 10);
+    var chunk = parseInt($('cvr-inc-chunk').value, 10);
+    if (!total || !chunk) { $('cvr-inc-plan').textContent = ''; return; }
+    var n = Math.ceil((total * 60) / chunk);
+    $('cvr-inc-plan').textContent = 'Will request ' + n + ' clip(s) of ' + (chunk / 60) + ' min to cover ' + total + ' min.';
+  }
+
+  function openIncident() {
+    if (!loaded) { return; }
+    fillIncidentCameras();
+    var now = new Date(); now.setMilliseconds(0);
+    $('cvr-inc-start').value = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
+    $('cvr-inc-total').value = '20';
+    $('cvr-inc-chunk').value = '120';
+    incidentClips = [];
+    $('cvr-inc-list').innerHTML = '';
+    $('cvr-inc-listwrap').hidden = true;
+    $('cvr-inc-zip').hidden = true;
+    $('cvr-inc-start-btn').disabled = false;
+    incStatus('');
+    updateIncPlan();
+    $('cvr-incident-modal').hidden = false;
+  }
+
+  function closeIncident() { $('cvr-incident-modal').hidden = true; }
+
+  function renderIncList() {
+    var body = $('cvr-inc-list');
+    body.innerHTML = '';
+    incidentClips.forEach(function (c) {
+      var tr = document.createElement('tr');
+      var dl = c.url ? '<a href="' + escHtml(c.url) + '" target="_blank" rel="noopener">download</a>' : '';
+      tr.innerHTML = '<td>' + c.idx + '</td><td>' + escHtml(c.label) + '</td><td>' + escHtml(c.status) + '</td><td>' + dl + '</td>';
+      body.appendChild(tr);
+    });
+  }
+
+  function startIncidentPull() {
+    var idxStr = $('cvr-inc-camera').value;
+    if (idxStr === '') { incStatus('Select a camera first.', 'error'); return; }
+    var cam = cameras[parseInt(idxStr, 10)];
+    var startLocal = $('cvr-inc-start').value;
+    var total = parseInt($('cvr-inc-total').value, 10);
+    var chunk = parseInt($('cvr-inc-chunk').value, 10);
+    if (!startLocal) { incStatus('Set the incident start time.', 'error'); return; }
+    if (!total || total < 1 || total > 120) { incStatus('Total minutes must be 1-120.', 'error'); return; }
+    var startMs = new Date(startLocal).getTime();
+    if (isNaN(startMs)) { incStatus('Invalid start time.', 'error'); return; }
+    var nChunks = Math.ceil((total * 60) / chunk);
+
+    incidentClips = [];
+    for (var i = 0; i < nChunks; i++) {
+      var s = new Date(startMs + i * chunk * 1000);
+      var e = new Date(Math.min(startMs + (i + 1) * chunk * 1000, startMs + total * 60 * 1000));
+      incidentClips.push({
+        idx: i + 1, startISO: s.toISOString(), endISO: e.toISOString(),
+        label: s.toLocaleTimeString() + ' - ' + e.toLocaleTimeString(),
+        requestId: null, status: 'Requesting...', url: null
+      });
+    }
+    renderIncList();
+    $('cvr-inc-listwrap').hidden = false;
+    $('cvr-inc-start-btn').disabled = true;
+    $('cvr-inc-zip').hidden = true;
+    incStatus('Requesting ' + nChunks + ' clip(s)...', 'busy');
+
+    incidentClips.forEach(function (clip) {
+      var payload = {
+        requestStartTime: clip.startISO, requestEndTime: clip.endISO, mediaResourceType: 'Video',
+        partnerId: cam.partnerId, partnerDeviceId: cam.partnerDeviceId, goDeviceSerialNumber: cam.goSerial
+      };
+      mediaFetch('POST', '/Media', payload).then(function (resp) {
+        clip.requestId = (resp && (resp.mediaRequestId || resp.requestId || resp.id)) || null;
+        clip.status = clip.requestId ? 'Processing...' : 'Queued';
+        renderIncList();
+        if (clip.requestId) { pollClip(clip, 0); } else { checkAllDone(); }
+      }).catch(function (err) {
+        clip.status = 'Failed: ' + (err && err.message ? err.message : err);
+        renderIncList(); checkAllDone();
+      });
+    });
+  }
+
+  function pollClip(clip, attempts) {
+    if (attempts > 75) { clip.status = 'Timed out'; renderIncList(); checkAllDone(); return; } // ~5 min
+    mediaFetch('GET', '/Media/' + encodeURIComponent(clip.requestId)).then(function (r) {
+      var st = r && r.status;
+      if (st === 'ResponseReady' || st === 'ResponsePartiallyReady') {
+        fetchClipResource(clip);
+      } else if (st === 'RequestFailed' || st === 'RequestTimedOut' || st === 'DeviceUnavailable' || st === 'QueueOverflow') {
+        clip.status = 'Failed (' + st + ')'; renderIncList(); checkAllDone();
+      } else {
+        clip.status = 'Processing...'; renderIncList();
+        setTimeout(function () { pollClip(clip, attempts + 1); }, 4000);
+      }
+    }).catch(function () {
+      setTimeout(function () { pollClip(clip, attempts + 1); }, 4000);
+    });
+  }
+
+  function fetchClipResource(clip) {
+    mediaFetch('GET', '/Media/' + encodeURIComponent(clip.requestId) + '/Resources').then(function (r) {
+      var resources = (r && r.mediaResources) || [];
+      var res = null;
+      for (var i = 0; i < resources.length; i++) { if (resources[i] && resources[i].mediaUrl) { res = resources[i]; break; } }
+      clip.url = res ? res.mediaUrl : null;
+      clip.status = res ? 'Ready' : 'Ready (no file URL)';
+      renderIncList(); checkAllDone();
+    }).catch(function () {
+      clip.status = 'Ready (link error)'; renderIncList(); checkAllDone();
+    });
+  }
+
+  function checkAllDone() {
+    var pending = incidentClips.some(function (c) { return /Requesting|Processing/.test(c.status); });
+    if (pending) { return; }
+    var ready = incidentClips.filter(function (c) { return c.url; });
+    $('cvr-inc-start-btn').disabled = false;
+    if (ready.length) {
+      $('cvr-inc-zip').hidden = false;
+      incStatus(ready.length + ' of ' + incidentClips.length + ' clip(s) ready. Download all, or use the per-clip links.', 'ok');
+    } else {
+      incStatus('No clips retrieved. Check the camera was online for that window, then retry.', 'error');
+    }
+  }
+
+  // ---- dependency-free ZIP (store / no compression - clips are already compressed) ----
+  var _cvrCrcTable = null;
+  function cvrCrcTable() {
+    if (_cvrCrcTable) { return _cvrCrcTable; }
+    var t = [];
+    for (var n = 0; n < 256; n++) {
+      var c = n;
+      for (var k = 0; k < 8; k++) { c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); }
+      t[n] = c >>> 0;
+    }
+    _cvrCrcTable = t; return t;
+  }
+  function cvrCrc32(u8) {
+    var t = cvrCrcTable(), crc = -1;
+    for (var i = 0; i < u8.length; i++) { crc = (crc >>> 8) ^ t[(crc ^ u8[i]) & 0xFF]; }
+    return (crc ^ -1) >>> 0;
+  }
+  function _u16(n) { return new Uint8Array([n & 255, (n >> 8) & 255]); }
+  function _u32(n) { return new Uint8Array([n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255]); }
+  function _cat(arr) {
+    var len = 0, i; for (i = 0; i < arr.length; i++) { len += arr[i].length; }
+    var out = new Uint8Array(len), o = 0;
+    for (i = 0; i < arr.length; i++) { out.set(arr[i], o); o += arr[i].length; }
+    return out;
+  }
+  function cvrBuildZip(files) {
+    var enc = new TextEncoder();
+    var parts = [], central = [], offset = 0;
+    files.forEach(function (f) {
+      var name = enc.encode(f.name);
+      var crc = cvrCrc32(f.data);
+      var size = f.data.length;
+      var lh = _cat([_u32(0x04034b50), _u16(20), _u16(0), _u16(0), _u16(0), _u16(0x21),
+        _u32(crc), _u32(size), _u32(size), _u16(name.length), _u16(0)]);
+      parts.push(lh, name, f.data);
+      var ch = _cat([_u32(0x02014b50), _u16(20), _u16(20), _u16(0), _u16(0), _u16(0), _u16(0x21),
+        _u32(crc), _u32(size), _u32(size), _u16(name.length), _u16(0), _u16(0), _u16(0), _u16(0),
+        _u32(0), _u32(offset)]);
+      central.push(ch, name);
+      offset += lh.length + name.length + size;
+    });
+    var cd = _cat(central);
+    var eocd = _cat([_u32(0x06054b50), _u16(0), _u16(0), _u16(files.length), _u16(files.length),
+      _u32(cd.length), _u32(offset), _u16(0)]);
+    var all = parts.concat([cd, eocd]);
+    return new Blob(all, { type: 'application/zip' });
+  }
+
+  function _pad(n) { return (n < 10 ? '0' : '') + n; }
+  function _safe(s) { return String(s).replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').slice(0, 28); }
+
+  function downloadIncidentZip() {
+    var ready = incidentClips.filter(function (c) { return c.url; });
+    if (!ready.length) { incStatus('Nothing ready to download.', 'error'); return; }
+    incStatus('Fetching ' + ready.length + ' clip(s) to bundle...', 'busy');
+    $('cvr-inc-zip').disabled = true;
+    var files = [], failed = 0;
+    var jobs = ready.map(function (c) {
+      return fetch(c.url).then(function (r) {
+        if (!r.ok) { throw new Error('http ' + r.status); }
+        return r.arrayBuffer();
+      }).then(function (buf) {
+        files.push({ name: 'clip_' + _pad(c.idx) + '_' + _safe(c.label) + '.mp4', data: new Uint8Array(buf) });
+      }).catch(function () { failed++; });
+    });
+    Promise.all(jobs).then(function () {
+      $('cvr-inc-zip').disabled = false;
+      if (!files.length) {
+        incStatus('Your browser is blocked from downloading the clip files directly (CORS). Use the per-clip "download" links in the list instead.', 'error');
+        return;
+      }
+      try {
+        var blob = cvrBuildZip(files);
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = 'incident_clips.zip';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        incStatus('Downloaded ' + files.length + ' clip(s) as ZIP' + (failed ? (' (' + failed + ' could not be fetched - use links)') : '') + '.', failed ? 'error' : 'ok');
+      } catch (e) {
+        incStatus('Could not build ZIP: ' + (e && e.message ? e.message : e) + '. Use the per-clip links.', 'error');
+      }
+    });
+  }
+
   // ---------- Wire up ----------
 
   function wireControls() {
@@ -428,6 +670,16 @@ geotab.addin.request = function (elt, service) {
     $('cvr-duration').addEventListener('change', updateWindowHint);
     $('cvr-modal').addEventListener('click', function (e) {
       if (e.target === $('cvr-modal')) { closeModal(); }
+    });
+    $('cvr-incident-open').addEventListener('click', openIncident);
+    $('cvr-inc-x').addEventListener('click', closeIncident);
+    $('cvr-inc-cancel').addEventListener('click', closeIncident);
+    $('cvr-inc-start-btn').addEventListener('click', startIncidentPull);
+    $('cvr-inc-zip').addEventListener('click', downloadIncidentZip);
+    $('cvr-inc-total').addEventListener('input', updateIncPlan);
+    $('cvr-inc-chunk').addEventListener('change', updateIncPlan);
+    $('cvr-incident-modal').addEventListener('click', function (e) {
+      if (e.target === $('cvr-incident-modal')) { closeIncident(); }
     });
     var findBtn = $('cvr-find');
     if (findBtn) { findBtn.addEventListener('click', findAddress); }
@@ -447,6 +699,7 @@ geotab.addin.request = function (elt, service) {
       loaded = true;
       setPanelStatus(cameras.length + ' camera(s) available.');
       $('cvr-open').disabled = cameras.length === 0;
+      $('cvr-incident-open').disabled = cameras.length === 0;
     }).catch(function (err) {
       setPanelStatus('Could not load cameras: ' + (err && err.message ? err.message : err) + '  [path=' + (sessionServer || (window.location && window.location.host)) + ']');
     });
